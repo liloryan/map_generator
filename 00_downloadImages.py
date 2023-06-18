@@ -18,6 +18,17 @@ with dataset2_path.open('r') as f:
     dataset2 = json.load(f)
 combined_list += list(dataset2.keys())
 # %%
+def dupliDeleter(l):
+    l_fixed = []
+    for i in range(len(l)):
+        url = l[i]
+        if '?' in url:
+            url = url[0:url.index('?')]
+            url += '.jpg'
+        l_fixed.append(url)
+    return l_fixed
+combined_list = dupliDeleter(combined_list)
+# %%
 combined_list = list(set(combined_list))
 print(len(combined_list))
 # %%
