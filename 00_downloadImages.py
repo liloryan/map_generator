@@ -10,14 +10,14 @@ data_path.mkdir(parents = True, exist_ok = True)
 # %%
 with (cfg_path/'images.txt').open('r') as f:
     url_list = f.readlines()
-
+print(len(url_list))
 for i in tqdm(range(len(url_list))):
     url = url_list[i].strip()
     file_name = data_path/(str(i) + url[-4:])
 
     if file_name.exists():
         continue
-    
+
     sleep(1)
     r = requests.get(url)
     with open(file_name,'wb') as f:
