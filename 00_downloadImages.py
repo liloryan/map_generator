@@ -5,7 +5,7 @@ from pathlib import Path
 from time import sleep
 # %%
 cfg_path = Path('cfg_files')
-data_path = Path('data')
+data_path = Path('data')/'maps'
 data_path.mkdir(parents = True, exist_ok = True)
 # %%
 with (cfg_path/'images.txt').open('r') as f:
