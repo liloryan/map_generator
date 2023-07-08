@@ -14,7 +14,7 @@ from pathlib import Path
 from torch.autograd import Variable
 #%%
 data_dir = Path('data')
-image_size = 224
+image_size = 28
 
 batch_size = 32
 epochs = 50
@@ -80,8 +80,12 @@ class VariationalEncoder(nn.Module):
         self.linear3 = nn.Linear(128, latent_dims)
 
         self.N = torch.distributions.Normal(0, 1)
-        self.N.loc = self.N.loc.cuda() # hack to get sampling on the GPU
-        self.N.scale = self.N.scale.cuda()
+        if device == 'cuda':
+            self.N.loc = self.N.loc.cuda() # hack to get sampling on the GPU
+            self.N.scale = self.N.scale.cuda()
+        else:
+            self.N.loc = self.N.loc.cpu() 
+            self.N.scale = self.N.scale.cpu()
         self.kl = 0
 
     def forward(self, x):
@@ -148,9 +152,9 @@ vae.to(device)
 def train_epoch(vae, device, dataloader, optimizer):
     # Set train mode for both the encoder and the decoder
     vae.train()
-    trainloss = 0.0
+    train_loss = 0.0
     # Iterate the dataloader (we do not need the label values, this is unsupervised learning)
-    for x,  in dataloader: 
+    for x, _ in dataloader: 
         # Move tensor to the proper device
         x = x.to(device)
         x_hat = vae(x)
@@ -162,7 +166,7 @@ def train_epoch(vae, device, dataloader, optimizer):
         loss.backward()
         optimizer.step()
         # Print batch loss
-        print('\t partial train loss (single batch): %f' % (loss.item()))
+       #print('\t partial train loss (single batch): %f' % (loss.item()))
         train_loss+=loss.item()
 
     return train_loss / len(dataloader.dataset)
@@ -170,8 +174,8 @@ def test_epoch(vae, device, dataloader):
     # Set evaluation mode for encoder and decoder
     vae.eval()
     val_loss = 0.0
-    with torch.nograd(): # No need to track the gradients
-        for x,  in dataloader:
+    with torch.no_grad(): # No need to track the gradients
+        for x, _ in dataloader:
             # Move tensor to the proper device
             x = x.to(device)
             # Encode data
@@ -184,11 +188,9 @@ def test_epoch(vae, device, dataloader):
     return val_loss / len(dataloader.dataset)
 def plot_ae_outputs(encoder,decoder,n=10):
     plt.figure(figsize=(16,4.5))
-    targets = test_dataset.targets.numpy()
-    t_idx = {i:np.where(targets==i)[0][0] for i in range(n)}
     for i in range(n):
       ax = plt.subplot(2,n,i+1)
-      img = test_dataset[t_idx[i]][0].unsqueeze(0).to(device)
+      img = test_dataset[i][0].unsqueeze(0).to(device)
       encoder.eval()
       decoder.eval()
       with torch.no_grad():
