@@ -143,8 +143,8 @@ class VariationalAutoencoder(nn.Module):
         z = self.encoder(x)
         return self.decoder(z)
 # %%
-vae = VariationalAutoencoder(latent_dims= 16)
-
+latent_dims = 16
+vae = VariationalAutoencoder(latent_dims)
 optim = torch.optim.Adam(vae.parameters(), lr=lr, weight_decay=1e-5)
 vae.to(device)
 #%%
@@ -214,3 +214,20 @@ for epoch in range(epochs):
     val_loss = test_epoch(vae,device, test_loader)
     print('\n EPOCH {}/{} \t train loss {:.3f} \t val loss {:.3f}'.format(epoch + 1, epochs,train_loss,val_loss))
     plot_ae_outputs(vae.encoder,vae.decoder,n=10)
+
+#%%
+vae.eval()
+
+with torch.no_grad():
+
+    # sample latent vectors from the normal distribution
+    latent = torch.randn(128, latent_dims, device=device)
+
+    # reconstruct images from the latent vectors
+    img_recon = vae.decoder(latent)
+    img_recon = img_recon.cpu()
+
+    fig, ax = plt.subplots(figsize=(20, 8.5))
+    imshow(torchvision.utils.make_grid(img_recon.data[:100],10,5))
+    plt.show()
+# %%
