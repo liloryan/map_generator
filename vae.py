@@ -14,11 +14,10 @@ from pathlib import Path
 from torch.autograd import Variable
 #%%
 data_dir = Path('data')
-image_size = 28
+image_size = 256
 
 batch_size = 32
 epochs = 50
-lr = 1e-3
 
 torch.manual_seed(42)
 torch.cuda.manual_seed(42)
@@ -71,13 +70,36 @@ imshow(torchvision.utils.make_grid(images))
 class VariationalEncoder(nn.Module):
     def __init__(self, latent_dims):  
         super(VariationalEncoder, self).__init__()
-        self.conv1 = nn.Conv2d(1, 8, 3, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(8, 16, 3, stride=2, padding=1)
-        self.batch2 = nn.BatchNorm2d(16)
-        self.conv3 = nn.Conv2d(16, 32, 3, stride=2, padding=0)  
-        self.linear1 = nn.Linear(3*3*32, 128)
-        self.linear2 = nn.Linear(128, latent_dims)
-        self.linear3 = nn.Linear(128, latent_dims)
+        self.convolutions = nn.Sequential(
+            nn.Sequential(
+                nn.Conv2d(1, 32, kernel_size = 3, stride = 2, padding = 1),
+                nn.BatchNorm2d(32),
+                nn.LeakyReLU()
+            ),
+            nn.Sequential(
+                nn.Conv2d(32, 64, kernel_size = 3, stride = 2, padding = 1),
+                nn.BatchNorm2d(64),
+                nn.LeakyReLU()
+            ),
+            nn.Sequential(
+                nn.Conv2d(64, 128, kernel_size = 3, stride = 2, padding = 1),
+                nn.BatchNorm2d(128),
+                nn.LeakyReLU()
+            ),
+            nn.Sequential(
+                nn.Conv2d(128, 256, kernel_size = 3, stride = 2, padding = 1),
+                nn.BatchNorm2d(256),
+                nn.LeakyReLU()
+            ),
+            nn.Sequential(
+                nn.Conv2d(256, 512, kernel_size = 3, stride = 2, padding = 1),
+                nn.BatchNorm2d(512),
+                nn.LeakyReLU()
+            )
+        )
+        self.linear1 = nn.Linear(32768, 128)
+        self.linear_mu = nn.Linear(128, latent_dims)
+        self.linear_sigma = nn.Linear(128, latent_dims)
 
         self.N = torch.distributions.Normal(0, 1)
         if device == 'cuda':
@@ -90,13 +112,11 @@ class VariationalEncoder(nn.Module):
 
     def forward(self, x):
         x = x.to(device)
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.batch2(self.conv2(x)))
-        x = F.relu(self.conv3(x))
-        x = torch.flatten(x, start_dim=1)
-        x = F.relu(self.linear1(x))
-        mu =  self.linear2(x)
-        sigma = torch.exp(self.linear3(x))
+        x = self.convolutions(x)
+        x = torch.flatten(x, start_dim = 1)
+        x = F.leaky_relu(self.linear1(x))
+        mu =  self.linear_mu(x)
+        sigma = torch.exp(self.linear_sigma(x))
         z = mu + sigma*self.N.sample(mu.shape)
         self.kl = (sigma**2 + mu**2 - torch.log(sigma) - 1/2).sum()
         return z      
@@ -108,28 +128,49 @@ class Decoder(nn.Module):
 
         self.decoder_lin = nn.Sequential(
             nn.Linear(latent_dims, 128),
-            nn.ReLU(True),
-            nn.Linear(128, 3 * 3 * 32),
-            nn.ReLU(True)
+            nn.LeakyReLU(True),
+            nn.Linear(128, 32768),
+            nn.LeakyReLU(True)
         )
 
-        self.unflatten = nn.Unflatten(dim=1, unflattened_size=(32, 3, 3))
+        self.unflatten = nn.Unflatten(dim=1, unflattened_size=(512, 8, 8))
 
-        self.decoder_conv = nn.Sequential(
-            nn.ConvTranspose2d(32, 16, 3, stride=2, output_padding=0),
-            nn.BatchNorm2d(16),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(16, 8, 3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(8),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(8, 1, 3, stride=2, padding=1, output_padding=1)
+        self.unconvs = nn.Sequential(
+            nn.Sequential(
+                nn.ConvTranspose2d(512, 256, kernel_size=3, stride = 2, padding=1, output_padding=1),
+                nn.BatchNorm2d(256),
+                nn.LeakyReLU()
+            ),
+            nn.Sequential(
+                nn.ConvTranspose2d(256, 128, kernel_size=3, stride = 2, padding=1, output_padding=1),
+                nn.BatchNorm2d(128),
+                nn.LeakyReLU()
+            ),
+            nn.Sequential(
+                nn.ConvTranspose2d(128, 64, kernel_size=3, stride = 2, padding=1, output_padding=1),
+                nn.BatchNorm2d(64),
+                nn.LeakyReLU()
+            ),
+            nn.Sequential(
+                nn.ConvTranspose2d(64, 32, kernel_size=3, stride = 2, padding=1, output_padding=1),
+                nn.BatchNorm2d(32),
+                nn.LeakyReLU()
+            ),
+            nn.Sequential(
+                nn.ConvTranspose2d(32, 32, kernel_size=3, stride = 2, padding=1, output_padding=1),
+                nn.BatchNorm2d(32),
+                nn.LeakyReLU()
+            ),
+            nn.Sequential(
+                nn.Conv2d(32, out_channels= 1, kernel_size= 3, padding= 1),
+                nn.Tanh()
+            )
         )
         
     def forward(self, x):
         x = self.decoder_lin(x)
         x = self.unflatten(x)
-        x = self.decoder_conv(x)
-        x = torch.sigmoid(x)
+        x = self.unconvs(x)
         return x
 
 class VariationalAutoencoder(nn.Module):
@@ -142,11 +183,6 @@ class VariationalAutoencoder(nn.Module):
         x = x.to(device)
         z = self.encoder(x)
         return self.decoder(z)
-# %%
-latent_dims = 16
-vae = VariationalAutoencoder(latent_dims)
-optim = torch.optim.Adam(vae.parameters(), lr=lr, weight_decay=1e-5)
-vae.to(device)
 #%%
 
 def train_epoch(vae, device, dataloader, optimizer):
@@ -209,12 +245,24 @@ def plot_ae_outputs(encoder,decoder,n=10):
     plt.show()
 
 #%%
+latent_dims = 16
+vae = VariationalAutoencoder(latent_dims)
+optim = torch.optim.Adam(vae.parameters(), lr=1e-2)
+vae.to(device)
+#%%
+train_losses = []
+val_losses = []
 for epoch in range(epochs):
     train_loss = train_epoch(vae,device, train_loader,optim)
     val_loss = test_epoch(vae,device, test_loader)
     print('\n EPOCH {}/{} \t train loss {:.3f} \t val loss {:.3f}'.format(epoch + 1, epochs,train_loss,val_loss))
     plot_ae_outputs(vae.encoder,vae.decoder,n=10)
-
+    train_losses.append(train_loss)
+    val_losses.append(val_loss)
+    
+#%%
+plt.plot(train_losses)
+plt.plot(val_losses)
 #%%
 vae.eval()
 
