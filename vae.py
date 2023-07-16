@@ -14,10 +14,12 @@ from pathlib import Path
 from torch.autograd import Variable
 #%%
 data_dir = Path('data')
+models_dir = Path('models')
+models_dir.mkdir(parents = True, exist_ok = True)
 image_size = 256
 
 batch_size = 32
-epochs = 50
+epochs = 1000
 
 torch.manual_seed(42)
 torch.cuda.manual_seed(42)
@@ -195,8 +197,8 @@ def train_epoch(vae, device, dataloader, optimizer):
         x = x.to(device)
         x_hat = vae(x)
         # Evaluate loss
-        loss = ((x - x_hat)**2).sum() + vae.encoder.kl
-
+        ms_error = ((x - x_hat)**2).sum()
+        loss = ms_error/750 + vae.encoder.kl
         # Backward pass
         optimizer.zero_grad()
         loss.backward()
@@ -204,6 +206,7 @@ def train_epoch(vae, device, dataloader, optimizer):
         # Print batch loss
        #print('\t partial train loss (single batch): %f' % (loss.item()))
         train_loss+=loss.item()
+
 
     return train_loss / len(dataloader.dataset)
 def test_epoch(vae, device, dataloader):
@@ -245,9 +248,10 @@ def plot_ae_outputs(encoder,decoder,n=10):
     plt.show()
 
 #%%
-latent_dims = 16
+latent_dims = 64
+model_name = f'vae_{latent_dims}'
 vae = VariationalAutoencoder(latent_dims)
-optim = torch.optim.Adam(vae.parameters(), lr=1e-2)
+optim = torch.optim.AdamW(vae.parameters(), lr=1e-5)
 vae.to(device)
 #%%
 train_losses = []
@@ -259,6 +263,7 @@ for epoch in range(epochs):
     plot_ae_outputs(vae.encoder,vae.decoder,n=10)
     train_losses.append(train_loss)
     val_losses.append(val_loss)
+    torch.save(vae.state_dict(), models_dir/f'{model_name}.{epoch}.pth')
     
 #%%
 plt.plot(train_losses)
@@ -278,4 +283,4 @@ with torch.no_grad():
     fig, ax = plt.subplots(figsize=(20, 8.5))
     imshow(torchvision.utils.make_grid(img_recon.data[:100],10,5))
     plt.show()
-# %%
+
